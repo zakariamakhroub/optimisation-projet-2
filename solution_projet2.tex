@@ -1,0 +1,194 @@
+\documentclass[11pt,a4paper]{article}
+
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage[french]{babel}
+\usepackage{amsmath,amssymb}
+\usepackage[margin=2.3cm]{geometry}
+\usepackage{booktabs}
+\usepackage{enumitem}
+
+\title{Solution d'optimisation du planning médical}
+\author{}
+\date{}
+
+\begin{document}
+\maketitle
+
+\section{Ensembles et indices}
+
+\begin{itemize}[leftmargin=*]
+    \item $M$ : ensemble des médecins ;
+    \item $A$ : ensemble des activités médicales ;
+    \item $J = \{\text{Lundi},\ldots,\text{Dimanche}\}$ : jours de la semaine ;
+    \item $C = \{\mathrm{AM},\mathrm{PM},\mathrm{GA}\}$ : créneaux horaires.
+\end{itemize}
+
+Les activités considérées sont : pédiatrie, urgences, consultations,
+exploration, astreinte, maternité et néonatologie.
+
+\section{Paramètres}
+
+\begin{itemize}[leftmargin=*]
+    \item $b_{a,j,c}$ : nombre de médecins nécessaires pour l'activité $a$,
+    le jour $j$ et le créneau $c$ ;
+    \item $q_{m,a} \in \{0,1\}$ : vaut $1$ si le médecin $m$ possède la
+    compétence nécessaire pour l'activité $a$ ;
+    \item $v_{m,j,c} \in \{0,1\}$ : vaut $1$ si le médecin $m$ est absent
+    le jour $j$ au créneau $c$ ;
+    \item $P$ : activités prioritaires, soit urgences, néonatologie,
+    pédiatrie, astreinte et maternité.
+\end{itemize}
+
+\section{Variables de décision}
+
+\begin{align*}
+    x_{m,a,j,c} &\in \{0,1\} &&\text{: médecin $m$ affecté à $a$ au créneau $(j,c)$},\\
+    r_{a,j,c} &\in \mathbb{Z}_{+} &&\text{: nombre de remplaçants utilisés},\\
+    h_m &\in \mathbb{Z}_{+} &&\text{: nombre de créneaux travaillés par $m$},\\
+    d_m &\in \mathbb{R}_{+} &&\text{: écart absolu de charge du médecin $m$ à la moyenne}.
+\end{align*}
+
+\section{Fonction objectif}
+
+La fonction objectif minimise d'abord le nombre total de remplaçants. Une
+pénalité supplémentaire est appliquée aux remplacements des activités
+prioritaires. Enfin, l'écart entre la charge maximale et la charge minimale
+est réduit afin d'équilibrer le planning :
+
+\begin{align*}
+\min Z ={}& 100000 \sum_{a\in A}\sum_{j\in J}\sum_{c\in C} r_{a,j,c} \\
+&+ \sum_{a\in A}\sum_{j\in J}\sum_{c\in C}
+    w_a r_{a,j,c} \\
+&+ 10 \sum_{m\in M}d_m,
+\end{align*}
+
+où
+
+\[
+w_a =
+\begin{cases}
+1000, & \text{si } a\in P,\\
+100, & \text{sinon.}
+\end{cases}
+\]
+
+Le coefficient $100000$ rend la minimisation du nombre de remplaçants
+prioritaire par rapport aux autres critères.
+
+\section{Contraintes}
+
+\subsection{Couverture exacte des besoins}
+
+Chaque besoin doit être couvert exactement par des médecins titulaires ou des
+remplaçants :
+
+\[
+\sum_{m\in M} x_{m,a,j,c} + r_{a,j,c} = b_{a,j,c}
+\qquad \forall a\in A,\;j\in J,\;c\in C.
+\]
+
+Lorsqu'aucun médecin n'est requis, aucune variable de remplacement n'est
+créée pour le créneau concerné.
+
+\subsection{Compétences médicales}
+
+Un médecin ne peut être affecté qu'à une activité pour laquelle il est
+compétent :
+
+\[
+x_{m,a,j,c} \leq q_{m,a}
+\qquad \forall m\in M,\;a\in A,\;j\in J,\;c\in C.
+\]
+
+Dans l'implémentation, les variables correspondant à une compétence absente
+ne sont pas créées.
+
+\subsection{Absences et vacances}
+
+Un médecin absent ne peut recevoir aucune affectation :
+
+\[
+x_{m,a,j,c} \leq 1-v_{m,j,c}
+\qquad \forall m\in M,\;a\in A,\;j\in J,\;c\in C.
+\]
+
+\subsection{Charge hebdomadaire}
+
+La charge de chaque médecin est définie par :
+
+\[
+h_m = \sum_{a\in A}\sum_{j\in J}\sum_{c\in C}x_{m,a,j,c}
+\qquad \forall m\in M.
+\]
+
+La limite hebdomadaire est :
+
+\[
+h_m \leq 10
+\qquad \forall m\in M.
+\]
+
+\subsection{Un seul créneau par jour}
+
+Chaque médecin ne peut travailler qu'un seul créneau dans une même journée :
+
+\[
+\sum_{a\in A}\sum_{c\in C}x_{m,a,j,c} \leq 1
+\qquad \forall m\in M,\;j\in J.
+\]
+
+\subsection{Repos après une garde}
+
+Une garde de nuit interdit toute affectation pendant les trois créneaux du
+jour suivant. Le planning étant hebdomadaire, le jour suivant dimanche est
+le lundi :
+
+\[
+\sum_{a\in A}x_{m,a,j,\mathrm{GA}}
++ \sum_{a\in A}\sum_{c\in C}x_{m,a,j^+,c}
+\leq 1
+\qquad \forall m\in M,\;j\in J,
+\]
+
+où $j^+$ désigne le jour suivant avec bouclage de dimanche vers lundi.
+
+\subsection{Équilibrage des charges}
+
+On définit la charge moyenne par :
+
+\[
+\overline{h} = \frac{1}{|M|}\sum_{m\in M}h_m.
+\]
+
+Les écarts absolus à la moyenne sont linéarisés par :
+
+\[
+h_m-\overline{h} \leq d_m,\qquad
+\overline{h}-h_m \leq d_m
+\qquad \forall m\in M.
+\]
+
+La fonction objectif minimise alors la somme des écarts absolus
+$\sum_{m\in M}d_m$.
+
+\section{Résultat de résolution}
+
+Le modèle a été résolu avec PuLP et le solveur CBC.
+
+\begin{center}
+\begin{tabular}{lr}
+\toprule
+\textbf{Indicateur} & \textbf{Valeur}\\
+\midrule
+Statut & Optimal\\
+Valeur de la fonction objectif & 2\,419\,675{,}56\\
+Nombre total de remplaçants & 24\\
+Charge moyenne & 4,89 créneaux\\
+Charge maximale observée & 7 créneaux\\
+Charge minimale observée & 0 créneau\\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\end{document}

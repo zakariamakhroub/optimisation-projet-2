@@ -130,13 +130,16 @@ def build_model(doctors: list[dict], demand: dict, absences: dict):
         )
         for name in doctor_names
     }
-    max_workload = pulp.LpVariable("charge_maximale", lowBound=0, cat="Integer")
-    min_workload = pulp.LpVariable("charge_minimale", lowBound=0, cat="Integer")
+    average_workload = pulp.lpSum(workload.values()) / len(doctor_names)
+    workload_deviation = {
+        name: pulp.LpVariable(f"ecart_charge_{name}", lowBound=0)
+        for name in doctor_names
+    }
 
     for name in doctor_names:
         model += workload[name] <= 10, f"maximum_hebdomadaire_{name}"
-        model += workload[name] <= max_workload
-        model += workload[name] >= min_workload
+        model += workload[name] - average_workload <= workload_deviation[name]
+        model += average_workload - workload[name] <= workload_deviation[name]
 
     for activity in ACTIVITY_COLUMNS:
         for day in DAYS:
@@ -188,7 +191,11 @@ def build_model(doctors: list[dict], demand: dict, absences: dict):
         variable * (1000 if activity in PRIORITY_ACTIVITIES else 100)
         for (activity, _day, _slot), variable in replacement.items()
     )
-    model += 100000 * pulp.lpSum(replacement.values()) + replacement_cost + 10 * (max_workload - min_workload)
+    model += (
+        100000 * pulp.lpSum(replacement.values())
+        + replacement_cost
+        + 10 * pulp.lpSum(workload_deviation.values())
+    )
     return model, assignment, replacement, workload
 
 
